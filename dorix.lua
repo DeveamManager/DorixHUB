@@ -16,6 +16,7 @@ local flySpeed = 50
 local guiHidden = false
 local espColor = Color3.fromRGB(255, 0, 0)
 local wallbangEnabled = false
+local espConnections = {}
 
 -- Создание индикатора "Dorix GUI" для скрытого состояния
 local ScreenGui = Instance.new("ScreenGui")
@@ -111,12 +112,23 @@ local function unloadGUI()
     guiHidden = false
     StatusLabel.Visible = false
     Library:ToggleUI()
+    
+    -- Отключение всех соединений
     for _, connection in pairs(getconnections(UserInputService.InputBegan)) do
-        connection:Disconnect()
+        pcall(function() connection:Disconnect() end)
     end
     for _, connection in pairs(getconnections(RunService.Heartbeat)) do
-        connection:Disconnect()
+        pcall(function() connection:Disconnect() end)
     end
+    for _, connection in pairs(getconnections(RunService.RenderStepped)) do
+        pcall(function() connection:Disconnect() end)
+    end
+    for _, connection in pairs(espConnections) do
+        pcall(function() connection:Disconnect() end)
+    end
+    espConnections = {}
+    
+    -- Очистка ESP
     for _, player in pairs(Players:GetPlayers()) do
         if player.Character then
             local billboard = player.Character:FindFirstChild("ESPBillboard")
@@ -125,12 +137,61 @@ local function unloadGUI()
             if highlight then highlight:Destroy() end
         end
     end
+    
+    -- Удаление GUI элементов
     ScreenGui:Destroy()
     StarterGui:SetCore("SendNotification", {
         Title = "Dorix GUI",
-        Text = "GUI выгружен!",
+        Text = "GUI успешно выгружен!",
         Duration = 3
     })
+end
+
+local function setupESP(player)
+    if player == LocalPlayer then return end
+    local characterConnection
+    characterConnection = player.CharacterAdded:Connect(function(character)
+        if not _G.ESP then return end
+        local head = character:WaitForChild("Head", 5)
+        local humanoid = character:WaitForChild("Humanoid", 5)
+        if head and humanoid and humanoid.Health > 0 then
+            local billboard = Instance.new("BillboardGui")
+            billboard.Name = "ESPBillboard"
+            billboard.Adornee = head
+            billboard.Size = UDim2.new(0, 200, 0, 50)
+            billboard.StudsOffset = Vector3.new(0, 3, 0)
+            billboard.AlwaysOnTop = true
+            billboard.Parent = character
+            
+            local displayNameLabel = Instance.new("TextLabel")
+            displayNameLabel.Size = UDim2.new(1, 0, 0, 25)
+            displayNameLabel.Position = UDim2.new(0, 0, 0, 0)
+            displayNameLabel.Text = player.DisplayName
+            displayNameLabel.TextColor3 = espColor
+            displayNameLabel.BackgroundTransparency = 1
+            displayNameLabel.TextSize = 14
+            displayNameLabel.Font = Enum.Font.SourceSansBold
+            displayNameLabel.Parent = billboard
+            
+            local usernameLabel = Instance.new("TextLabel")
+            usernameLabel.Size = UDim2.new(1, 0, 0, 25)
+            usernameLabel.Position = UDim2.new(0, 0, 0, 25)
+            usernameLabel.Text = "@" .. player.Name
+            usernameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            usernameLabel.BackgroundTransparency = 1
+            usernameLabel.TextSize = 12
+            usernameLabel.Font = Enum.Font.SourceSans
+            usernameLabel.Parent = billboard
+            
+            local highlight = Instance.new("Highlight")
+            highlight.Parent = character
+            highlight.FillColor = espColor
+            highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+            highlight.FillTransparency = 0.5
+            highlight.OutlineTransparency = 0
+        end
+    end)
+    table.insert(espConnections, characterConnection)
 end
 
 local function updateESP()
@@ -141,17 +202,6 @@ local function updateESP()
             local highlight = player.Character:FindFirstChild("Highlight")
             
             if _G.ESP then
-                -- Создание Highlight
-                if not highlight then
-                    highlight = Instance.new("Highlight")
-                    highlight.Parent = player.Character
-                    highlight.FillColor = espColor
-                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-                    highlight.FillTransparency = 0.5
-                    highlight.OutlineTransparency = 0
-                end
-                
-                -- Создание BillboardGui для отображения имени
                 if head and not billboard then
                     billboard = Instance.new("BillboardGui")
                     billboard.Name = "ESPBillboard"
@@ -181,6 +231,15 @@ local function updateESP()
                     usernameLabel.Font = Enum.Font.SourceSans
                     usernameLabel.Parent = billboard
                 end
+                
+                if not highlight then
+                    highlight = Instance.new("Highlight")
+                    highlight.Parent = player.Character
+                    highlight.FillColor = espColor
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.FillTransparency = 0.5
+                    highlight.OutlineTransparency = 0
+                end
             else
                 if billboard then billboard:Destroy() end
                 if highlight then highlight:Destroy() end
@@ -209,6 +268,12 @@ oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     end
     return oldNamecall(self, ...)
 end)
+
+-- Установка ESP для всех текущих игроков и новых
+for _, player in pairs(Players:GetPlayers()) do
+    setupESP(player)
+end
+Players.PlayerAdded:Connect(setupESP)
 
 local MainTab = Window:NewTab("Main")
 local MainSection = MainTab:NewSection("Основные функции")
@@ -319,6 +384,6 @@ RunService.RenderStepped:Connect(updateESP)
 
 StarterGui:SetCore("SendNotification", {
     Title = "Dorix GUI",
-    Text = "Dorix GUI с улучшенным ESP (имена) и wallbang загружен!",
+    Text = "Dorix GUI с исправленным ESP и выгрузкой загружен!",
     Duration = 3
 })
