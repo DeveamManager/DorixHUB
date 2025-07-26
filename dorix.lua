@@ -15,6 +15,7 @@ local flyEnabled = false
 local flySpeed = 50
 local guiHidden = false
 local espColor = Color3.fromRGB(255, 0, 0)
+local wallbangEnabled = false
 
 -- Создание индикатора "Dorix GUI" для скрытого состояния
 local ScreenGui = Instance.new("ScreenGui")
@@ -106,6 +107,7 @@ local function unloadGUI()
     _G.ESP = false
     aimEnabled = false
     flyEnabled = false
+    wallbangEnabled = false
     guiHidden = false
     StatusLabel.Visible = false
     Library:ToggleUI()
@@ -114,6 +116,14 @@ local function unloadGUI()
     end
     for _, connection in pairs(getconnections(RunService.Heartbeat)) do
         connection:Disconnect()
+    end
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character then
+            local billboard = player.Character:FindFirstChild("ESPBillboard")
+            if billboard then billboard:Destroy() end
+            local highlight = player.Character:FindFirstChild("Highlight")
+            if highlight then highlight:Destroy() end
+        end
     end
     ScreenGui:Destroy()
     StarterGui:SetCore("SendNotification", {
@@ -126,8 +136,12 @@ end
 local function updateESP()
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local head = player.Character:FindFirstChild("Head")
+            local billboard = player.Character:FindFirstChild("ESPBillboard")
             local highlight = player.Character:FindFirstChild("Highlight")
+            
             if _G.ESP then
+                -- Создание Highlight
                 if not highlight then
                     highlight = Instance.new("Highlight")
                     highlight.Parent = player.Character
@@ -136,19 +150,65 @@ local function updateESP()
                     highlight.FillTransparency = 0.5
                     highlight.OutlineTransparency = 0
                 end
-            else
-                if highlight then
-                    highlight:Destroy()
+                
+                -- Создание BillboardGui для отображения имени
+                if head and not billboard then
+                    billboard = Instance.new("BillboardGui")
+                    billboard.Name = "ESPBillboard"
+                    billboard.Adornee = head
+                    billboard.Size = UDim2.new(0, 200, 0, 50)
+                    billboard.StudsOffset = Vector3.new(0, 3, 0)
+                    billboard.AlwaysOnTop = true
+                    billboard.Parent = player.Character
+                    
+                    local displayNameLabel = Instance.new("TextLabel")
+                    displayNameLabel.Size = UDim2.new(1, 0, 0, 25)
+                    displayNameLabel.Position = UDim2.new(0, 0, 0, 0)
+                    displayNameLabel.Text = player.DisplayName
+                    displayNameLabel.TextColor3 = espColor
+                    displayNameLabel.BackgroundTransparency = 1
+                    displayNameLabel.TextSize = 14
+                    displayNameLabel.Font = Enum.Font.SourceSansBold
+                    displayNameLabel.Parent = billboard
+                    
+                    local usernameLabel = Instance.new("TextLabel")
+                    usernameLabel.Size = UDim2.new(1, 0, 0, 25)
+                    usernameLabel.Position = UDim2.new(0, 0, 0, 25)
+                    usernameLabel.Text = "@" .. player.Name
+                    usernameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    usernameLabel.BackgroundTransparency = 1
+                    usernameLabel.TextSize = 12
+                    usernameLabel.Font = Enum.Font.SourceSans
+                    usernameLabel.Parent = billboard
                 end
+            else
+                if billboard then billboard:Destroy() end
+                if highlight then highlight:Destroy() end
             end
         elseif player.Character then
+            local billboard = player.Character:FindFirstChild("ESPBillboard")
+            if billboard then billboard:Destroy() end
             local highlight = player.Character:FindFirstChild("Highlight")
-            if highlight then
-                highlight:Destroy()
-            end
+            if highlight then highlight:Destroy() end
         end
     end
 end
+
+-- Wallbang (стрельба через стены)
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local args = {...}
+    if wallbangEnabled and getnamecallmethod() == "FindPartOnRayWithIgnoreList" then
+        local ignoreList = args[2]
+        for _, part in pairs(workspace:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide and part ~= LocalPlayer.Character then
+                table.insert(ignoreList, part)
+            end
+        end
+        return oldNamecall(self, args[1], ignoreList, unpack(args, 3))
+    end
+    return oldNamecall(self, ...)
+end)
 
 local MainTab = Window:NewTab("Main")
 local MainSection = MainTab:NewSection("Основные функции")
@@ -184,31 +244,31 @@ end)
 AimSection:NewSlider("Плавность аима", "Настройка плавности (0.1-1)", 1, 0.1, function(value)
     aimSmoothness = value
 end)
-
-local TeleportSection = MainTab:NewSection("Телепорты")
-TeleportSection:NewDropdown("Выбрать локацию", "Телепорт к ключевым точкам", {"Банк", "Магазин оружия", "Казино"}, function(selected)
-    local locations = {
-        Bank = CFrame.new(-350, 20, -400),
-        GunShop = CFrame.new(-600, 20, -200),
-        Casino = CFrame.new(100, 20, 300)
-    }
-    game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = locations[selected]
+AimSection:NewToggle("Стрельба через стены", "Игнорирует стены при стрельбе", function(state)
+    wallbangEnabled = state
+    if state then
+        print("Стрельба через стены включена")
+    else
+        print("Стрельба через стены выключена")
+    end
 end)
 
 local VisualsTab = Window:NewTab("Визуалы")
 local VisualsSection = VisualsTab:NewSection("ESP и визуальные эффекты")
-VisualsSection:NewToggle("ESP для игроков", "Подсвечивает игроков", function(state)
+VisualsSection:NewToggle("ESP для игроков", "Подсвечивает игроков и показывает имена", function(state)
     _G.ESP = state
     if not state then
         for _, player in pairs(Players:GetPlayers()) do
             if player.Character then
+                local billboard = player.Character:FindFirstChild("ESPBillboard")
+                if billboard then billboard:Destroy() end
                 local highlight = player.Character:FindFirstChild("Highlight")
                 if highlight then highlight:Destroy() end
             end
         end
     end
 end)
-VisualsSection:NewColorPicker("Цвет ESP", "Изменить цвет подсветки игроков", Color3.fromRGB(255, 0, 0), function(color)
+VisualsSection:NewColorPicker("Цвет ESP", "Изменить цвет подсветки и имени", Color3.fromRGB(255, 0, 0), function(color)
     espColor = color
 end)
 
@@ -259,6 +319,6 @@ RunService.RenderStepped:Connect(updateESP)
 
 StarterGui:SetCore("SendNotification", {
     Title = "Dorix GUI",
-    Text = "Dorix GUI с улучшенным ESP и скрытием UI загружен!",
+    Text = "Dorix GUI с улучшенным ESP (имена) и wallbang загружен!",
     Duration = 3
 })
