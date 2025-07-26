@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Camera = game.Workspace.CurrentCamera
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
 local aimEnabled = false
 local targetPart = "Head"
 local lockedPlayer = nil
@@ -12,6 +13,23 @@ local aimFOV = 100
 local aimSmoothness = 0.1
 local flyEnabled = false
 local flySpeed = 50
+local guiHidden = false
+local espColor = Color3.fromRGB(255, 0, 0)
+
+-- Создание индикатора "Dorix GUI" для скрытого состояния
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.IgnoreGuiInset = true
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(0, 200, 0, 50)
+StatusLabel.Position = UDim2.new(1, -210, 0, 10)
+StatusLabel.Text = "Dorix GUI"
+StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.TextSize = 20
+StatusLabel.Font = Enum.Font.SourceSansBold
+StatusLabel.Visible = false
+StatusLabel.Parent = ScreenGui
 
 local function getClosestPlayer()
     local closestPlayer = nil
@@ -19,7 +37,7 @@ local function getClosestPlayer()
     local mousePos = UserInputService:GetMouseLocation()
 
     for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild(targetPart) then
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild(targetPart) and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
             local part = player.Character[targetPart]
             local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
             if onScreen then
@@ -88,6 +106,8 @@ local function unloadGUI()
     _G.ESP = false
     aimEnabled = false
     flyEnabled = false
+    guiHidden = false
+    StatusLabel.Visible = false
     Library:ToggleUI()
     for _, connection in pairs(getconnections(UserInputService.InputBegan)) do
         connection:Disconnect()
@@ -95,11 +115,39 @@ local function unloadGUI()
     for _, connection in pairs(getconnections(RunService.Heartbeat)) do
         connection:Disconnect()
     end
-    game.StarterGui:SetCore("SendNotification", {
+    ScreenGui:Destroy()
+    StarterGui:SetCore("SendNotification", {
         Title = "Dorix GUI",
         Text = "GUI выгружен!",
         Duration = 3
     })
+end
+
+local function updateESP()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local highlight = player.Character:FindFirstChild("Highlight")
+            if _G.ESP then
+                if not highlight then
+                    highlight = Instance.new("Highlight")
+                    highlight.Parent = player.Character
+                    highlight.FillColor = espColor
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.FillTransparency = 0.5
+                    highlight.OutlineTransparency = 0
+                end
+            else
+                if highlight then
+                    highlight:Destroy()
+                end
+            end
+        elseif player.Character then
+            local highlight = player.Character:FindFirstChild("Highlight")
+            if highlight then
+                highlight:Destroy()
+            end
+        end
+    end
 end
 
 local MainTab = Window:NewTab("Main")
@@ -107,6 +155,8 @@ local MainSection = MainTab:NewSection("Основные функции")
 
 MainSection:NewButton("Активировать GUI", "Открывает стильный интерфейс", function()
     Library:ToggleUI()
+    guiHidden = not guiHidden
+    StatusLabel.Visible = guiHidden
 end)
 
 MainSection:NewButton("Выгрузить GUI", "Полностью выгружает скрипт", function()
@@ -148,28 +198,18 @@ end)
 local VisualsTab = Window:NewTab("Визуалы")
 local VisualsSection = VisualsTab:NewSection("ESP и визуальные эффекты")
 VisualsSection:NewToggle("ESP для игроков", "Подсвечивает игроков", function(state)
-    if state then
-        _G.ESP = true
-        while _G.ESP do
-            for _, player in pairs(game.Players:GetPlayers()) do
-                if player.Character and player ~= LocalPlayer then
-                    local highlight = Instance.new("Highlight")
-                    highlight.Parent = player.Character
-                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
-                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-                end
-            end
-            wait(2)
-        end
-    else
-        _G.ESP = false
-        for _, player in pairs(game.Players:GetPlayers()) do
+    _G.ESP = state
+    if not state then
+        for _, player in pairs(Players:GetPlayers()) do
             if player.Character then
                 local highlight = player.Character:FindFirstChild("Highlight")
                 if highlight then highlight:Destroy() end
             end
         end
     end
+end)
+VisualsSection:NewColorPicker("Цвет ESP", "Изменить цвет подсветки игроков", Color3.fromRGB(255, 0, 0), function(color)
+    espColor = color
 end)
 
 local MovementTab = Window:NewTab("Движение")
@@ -196,22 +236,29 @@ UIAnimation:NewSection("Кастомизация"):NewColorPicker("Цвет ин
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed and input.KeyCode == Enum.KeyCode.Q then
-        aimEnabled = not aimEnabled
-        if aimEnabled then
-            lockedPlayer = getClosestPlayer()
-            print("Аимбот включен, цель: " .. (lockedPlayer and lockedPlayer.Name or "Нет цели"))
-        else
-            lockedPlayer = nil
-            print("Аимбот выключен")
+    if not gameProcessed then
+        if input.KeyCode == Enum.KeyCode.Q then
+            aimEnabled = not aimEnabled
+            if aimEnabled then
+                lockedPlayer = getClosestPlayer()
+                print("Аимбот включен, цель: " .. (lockedPlayer and lockedPlayer.Name or "Нет цели"))
+            else
+                lockedPlayer = nil
+                print("Аимбот выключен")
+            end
+        elseif input.KeyCode == Enum.KeyCode.RightShift then
+            guiHidden = not guiHidden
+            Library:ToggleUI()
+            StatusLabel.Visible = guiHidden
         end
     end
 end)
 
 RunService.Heartbeat:Connect(aimAtTarget)
+RunService.RenderStepped:Connect(updateESP)
 
-game.StarterGui:SetCore("SendNotification", {
+StarterGui:SetCore("SendNotification", {
     Title = "Dorix GUI",
-    Text = "Dorix GUI с полётом и выгрузкой загружен!",
+    Text = "Dorix GUI с улучшенным ESP и скрытием UI загружен!",
     Duration = 3
 })
